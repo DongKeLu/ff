@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>玉米期货量化决策系统</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-red: #f85149;
+    --accent-yellow: #d29922;
+    --accent-purple: #bc8cff;
+    --accent-orange: #f0883e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+
+  /* ── Header ──────────────────────────────────────────────── */
+  .header {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .header-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .header-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .header-meta .tag {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+  }
+
+  /* ── Navigation tabs ─────────────────────────────────────── */
+  .tabs {
+    display: flex;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+
+  .tab {
+    padding: 10px 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+
+  .tab:hover { color: var(--text-primary); }
+
+  .tab.active {
+    color: var(--accent-blue);
+    border-bottom-color: var(--accent-blue);
+  }
+
+  /* ── Main layout ────────────────────────────────────────── */
+  .main {
+    padding: 20px 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  /* ── Cards ──────────────────────────────────────────────── */
+  .card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .card-body { padding: 16px; }
+
+  /* ── Metric cards ────────────────────────────────────────── */
+  .metrics-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .metric-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .metric-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  .metric-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+
+  .metric-sub {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  /* ── Prediction cards ─────────────────────────────────────── */
+  .pred-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .pred-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .pred-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+
+  .pred-card.bullish::before { background: var(--accent-green); }
+  .pred-card.bearish::before { background: var(--accent-red); }
+  .pred-card.neutral::before { background: var(--accent-yellow); }
+
+  .pred-horizon {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  .pred-direction {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pred-direction.bull { color: var(--accent-green); }
+  .pred-direction.bear { color: var(--accent-red); }
+  .pred-direction.neut { color: var(--accent-yellow); }
+
+  .pred-detail {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+  }
+
+  .pred-detail .val {
+    color: var(--text-primary);
+    font-family: "SF Mono", Consolas, monospace;
+  }
+
+  .pred-confidence {
+    margin-top: 10px;
+    height: 4px;
+    background: var(--bg-primary);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .pred-confidence-bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s;
+  }
+
+  /* ── Model breakdown ────────────────────────────────────── */
+  .model-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .model-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+  }
+
+  .model-name {
+    width: 80px;
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .model-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .model-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  .model-weight {
+    width: 36px;
+    text-align: right;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  /* ── Chart containers ────────────────────────────────────── */
+  .chart-container {
+    width: 100%;
+    height: 400px;
+  }
+
+  .chart-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .chart-row .chart-container { height: 300px; }
+
+  /* ── Tables ──────────────────────────────────────────────── */
+  .signal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .signal-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .signal-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .signal-table tr:last-child td { border-bottom: none; }
+
+  .direction-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .direction-badge.bull { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); }
+  .direction-badge.bear { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); }
+  .direction-badge.neut { background: rgba(210, 153, 34, 0.15); color: var(--accent-yellow); }
+
+  /* ── Alert boxes ─────────────────────────────────────────── */
+  .alert {
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 12px;
+    border-left: 3px solid;
+  }
+
+  .alert-warning {
+    background: rgba(210, 153, 34, 0.1);
+    border-color: var(--accent-yellow);
+    color: var(--accent-yellow);
+  }
+
+  .alert-info {
+    background: rgba(88, 166, 255, 0.1);
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+  }
+
+  .alert-empty {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  /* ── Loading ────────────────────────────────────────────── */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    gap: 10px;
+  }
+
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Footer ─────────────────────────────────────────────── */
+  .footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  /* ── Regime badge ────────────────────────────────────────── */
+  .regime-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .regime-full {
+    background: rgba(188, 140, 255, 0.15);
+    color: var(--accent-purple);
+  }
+
+  .regime-price {
+    background: rgba(139, 148, 158, 0.15);
+    color: var(--text-secondary);
+  }
+
+  /* ── Weight panel ────────────────────────────────────────── */
+  .weight-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .weight-item {
+    text-align: center;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+  }
+
+  .weight-item .name {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .weight-item .val {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+
+  .weight-item .sub {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-title">
+    <span class="dot"></span>
+    玉米期货量化决策系统
+  </div>
+  <div class="header-meta" id="header-meta">
+    <span class="tag" id="tag-status">初始化中...</span>
+    <span id="header-date"></span>
+    <span id="header-close"></span>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">综合看板</div>
+  <div class="tab" data-tab="price" onclick="switchTab('price')">技术分析</div>
+  <div class="tab" data-tab="fundamental" onclick="switchTab('fundamental')">基本面</div>
+  <div class="tab" data-tab="models" onclick="switchTab('models')">模型详情</div>
+</div>
+
+<!-- ── Dashboard Tab ───────────────────────────────────── -->
+<div id="tab-dashboard" class="main tab-content">
+
+  <!-- Top metrics -->
+  <div class="metrics-row" id="metrics-row">
+    <div class="loading"><div class="spinner"></div>加载中...</div>
+  </div>
+
+  <!-- Regime notice -->
+  <div id="regime-notice" style="margin-bottom: 12px;"></div>
+
+  <!-- Prediction cards -->
+  <div class="card">
+    <div class="card-header">
+      <span>模型集成预测</span>
+      <span style="font-weight: 400; font-size: 11px; color: var(--text-secondary);">权重动态调整 · 三周期输出</span>
+    </div>
+    <div class="card-body">
+      <div class="pred-grid" id="pred-grid">
+        <div class="loading"><div class="spinner"></div>加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model weights -->
+  <div class="card">
+    <div class="card-header">模型权重</div>
+    <div class="card-body">
+      <div class="weight-grid" id="weight-grid"></div>
+    </div>
+  </div>
+
+  <!-- Logic signals -->
+  <div class="card">
+    <div class="card-header">金融逻辑信号</div>
+    <div class="card-body">
+      <div id="logic-signals">
+        <div class="alert alert-info">金融逻辑规则待输入（signals.py 暂为空）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Price Tab ───────────────────────────────────────── -->
+<div id="tab-price" class="main tab-content" style="display: none;">
+  <div class="chart-row">
+    <div class="card" style="margin-bottom: 0;">
+      <div class="card-header">DCE 玉米期货价格 (2004-2026)</div>
+      <div class="card-body" style="padding: 8px;">
+        <div class="chart-container" id="chart-price" style="height: 380px;"></div>
+      </div>
+    </div>
+  </div>
+  <div class="chart-row">
+    <div class="card" style="margin-bottom: 0;">
+      <div class="card-header">MACD</div>
+      <div class="card-body" style="padding: 8px;">
+        <div class="chart-container" id="chart-macd" style="height: 200px;"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom: 0;">
+      <div class="card-header">RSI / CCI</div>
+      <div class="card-body" style="padding: 8px;">
+        <div class="chart-container" id="chart-rsi" style="height: 200px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Fundamental Tab ──────────────────────────────────── -->
+<div id="tab-fundamental" class="main tab-content" style="display: none;">
+  <div class="chart-row">
+    <div class="card" style="margin-bottom: 0;">
+      <div class="card-header">港口价格走势</div>
+      <div class="card-body" style="padding: 8px;">
+        <div class="chart-container" id="chart-port-price" style="height: 280px;"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom: 0;">
+      <div class="card-header">仓单数量 (Warehouse Receipts)</div>
+      <div class="card-body" style="padding: 8px;">
+        <div class="chart-container" id="chart-wr" style="height: 280px;"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">小麦替代成本优势</div>
+    <div class="card-body" style="padding: 8px;">
+      <div class="chart-container" id="chart-wheat" style="height: 200px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Models Tab ───────────────────────────────────────── -->
+<div id="tab-models" class="main tab-content" style="display: none;">
+  <div class="card">
+    <div class="card-header">各模型预测详情</div>
+    <div class="card-body">
+      <div id="model-detail-table">
+        <div class="loading"><div class="spinner"></div>加载中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  玉米期货量化决策系统 · DCE Corn Futures · 多模型集成 · 仅供决策参考
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let state = {
+  prediction: null,
+  priceData: null,
+  fundamentalData: null,
+  charts: {},
+  currentTab: 'dashboard',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API helpers
+// ─────────────────────────────────────────────────────────────────────────────
+async function api(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab navigation
+// ─────────────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+  document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
+  document.getElementById(`tab-${name}`).style.display = 'block';
+  state.currentTab = name;
+
+  if (name === 'price' && !state.priceData) loadPriceChart();
+  if (name === 'fundamental' && !state.fundamentalData) loadFundamentalCharts();
+  if (name === 'models' && state.prediction) renderModelDetail();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+function renderDashboard(data) {
+  state.prediction = data;
+
+  // Metrics row
+  const regimeClass = data.data_regime === 'full' ? 'regime-full' : 'regime-price';
+  const regimeLabel = data.data_regime === 'full' ? '量价+基本面' : '仅量价';
+
+  document.getElementById('metrics-row').innerHTML = `
+    <div class="metric-card">
+      <div class="metric-label">最新收盘价</div>
+      <div class="metric-value" style="color: var(--accent-blue);">${data.latest_close.toFixed(0)}</div>
+      <div class="metric-sub">${data.latest_date}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">成交量</div>
+      <div class="metric-value" style="color: var(--accent-purple);">${(data.latest_volume/10000).toFixed(1)}万</div>
+      <div class="metric-sub">手</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">基本面数据</div>
+      <div class="metric-value" style="font-size: 16px; padding-top: 4px;">
+        <span class="regime-badge ${regimeClass}">${regimeLabel}</span>
+      </div>
+      <div class="metric-sub">${data.fundamental_available ? '有效' : '不可用'}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">模型状态</div>
+      <div class="metric-value" style="color: var(--accent-green); font-size: 14px; padding-top: 4px;">已就绪</div>
+      <div class="metric-sub">LightGBM · LSTM · Prophet</div>
+    </div>
+  `;
+
+  document.getElementById('header-date').textContent = data.latest_date;
+  document.getElementById('header-close').textContent = `收盘价 ${data.latest_close.toFixed(0)}`;
+  document.getElementById('tag-status').textContent = '● 在线';
+
+  // Regime notice
+  const regimeNotice = document.getElementById('regime-notice');
+  if (!data.fundamental_available) {
+    regimeNotice.innerHTML = `<div class="alert alert-warning">当前处于「仅量价」区间（2014年前），基本面特征不可用，预测置信度可能偏低。</div>`;
+  } else {
+    regimeNotice.innerHTML = '';
+  }
+
+  // Prediction cards
+  const predGrid = document.getElementById('pred-grid');
+  const horizons = { 1: '次日 (T+1)', 5: '一周 (T+5)', 20: '一月 (T+20)' };
+
+  let html = '';
+  for (const [h, info] of Object.entries(data.predictions)) {
+    const ens = info.ensemble;
+    const dirClass = ens.direction === '看多' ? 'bull' : ens.direction === '看空' ? 'bear' : 'neut';
+    const cardClass = ens.direction === '看多' ? 'bullish' : ens.direction === '看空' ? 'bearish' : 'neutral';
+    const color = ens.direction === '看多' ? 'var(--accent-green)' : ens.direction === '看空' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+    const confidence = (ens.confidence * 100).toFixed(0);
+    const probUp = ((ens.prob_up - 0.5) * 200).toFixed(0);
+
+    html += `
+      <div class="pred-card ${cardClass}">
+        <div class="pred-horizon">${horizons[h]}</div>
+        <div class="pred-direction ${dirClass}">${ens.direction}</div>
+        <div class="pred-detail">
+          <div>预测价格：<span class="val">${ens.pred_price}</span> 元/吨</div>
+          <div>预测涨跌幅：<span class="val">${(ens.return * 100).toFixed(2)}%</span></div>
+          <div>上涨概率：<span class="val">${(ens.prob_up * 100).toFixed(1)}%</span></div>
+          ${ens.ci_lower ? `<div>置信区间：<span class="val">${ens.ci_lower} ~ ${ens.ci_upper}</span></div>` : ''}
+        </div>
+        <div class="pred-confidence">
+          <div class="pred-confidence-bar" style="width: ${confidence}%; background: ${color};"></div>
+        </div>
+        <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px; text-align: right;">置信度 ${confidence}%</div>
+      </div>
+    `;
+  }
+  predGrid.innerHTML = html;
+
+  // Weights
+  const weights = data.model_weights;
+  const weightGrid = document.getElementById('weight-grid');
+  const modelColors = {
+    lightgbm: 'var(--accent-green)',
+    lstm: 'var(--accent-blue)',
+    prophet: 'var(--accent-purple)',
+  };
+  const modelLabels = {
+    lightgbm: 'LightGBM',
+    lstm: 'LSTM',
+    prophet: 'Prophet',
+  };
+
+  let wHtml = '';
+  for (const [name, w] of Object.entries(weights)) {
+    wHtml += `
+      <div class="weight-item">
+        <div class="name">${modelLabels[name] || name}</div>
+        <div class="val" style="color: ${modelColors[name] || 'var(--text-primary)'};">${(w * 100).toFixed(1)}%</div>
+        <div class="sub">模型权重</div>
+      </div>
+    `;
+  }
+  weightGrid.innerHTML = wHtml;
+
+  // Logic signals
+  const ls = data.logic_signals;
+  const lsDiv = document.getElementById('logic-signals');
+  if (ls.triggered_rules && ls.triggered_rules.length > 0) {
+    let lsHtml = `<div class="alert alert-info"><strong>触发规则（${ls.triggered_rules.length}条）：</strong> ${ls.descriptions.join('；')}</div>`;
+    if (ls.divergence_warning) {
+      lsHtml += `<div class="alert alert-warning">${ls.divergence_warning}</div>`;
+    }
+    lsDiv.innerHTML = lsHtml;
+  } else {
+    lsDiv.innerHTML = `<div class="alert alert-empty">金融逻辑规则待输入（signals.py 暂为空）</div>`;
+  }
+
+  // Model detail table
+  renderModelDetail();
+}
+
+function renderModelDetail() {
+  const data = state.prediction;
+  if (!data) return;
+
+  const table = document.getElementById('model-detail-table');
+  const horizons = { 1: '次日 T+1', 5: '一周 T+5', 20: '一月 T+20' };
+  const modelNames = {
+    lightgbm: 'LightGBM',
+    lstm: 'LSTM',
+    prophet: 'Prophet',
+  };
+
+  let html = `<table class="signal-table">
+    <thead>
+      <tr>
+        <th>周期</th>
+        <th>模型</th>
+        <th>预测收益率</th>
+        <th>方向</th>
+        <th>置信度</th>
+        <th>上涨概率</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  for (const [h, info] of Object.entries(data.predictions)) {
+    for (const [mName, mInfo] of Object.entries(info.model_predictions)) {
+      if (mInfo.pred_return === null) continue;
+      const dirClass = mInfo.direction === '看多' ? 'bull' : mInfo.direction === '看空' ? 'bear' : 'neut';
+      html += `<tr>
+        <td>${horizons[h]}</td>
+        <td><strong>${modelNames[mName]}</strong></td>
+        <td><span class="val">${(mInfo.pred_return * 100).toFixed(2)}%</span></td>
+        <td><span class="direction-badge ${dirClass}">${mInfo.direction}</span></td>
+        <td>${(mInfo.confidence * 100).toFixed(0)}%</td>
+        <td>${(mInfo.prob_up * 100).toFixed(1)}%</td>
+      </tr>`;
+    }
+  }
+
+  html += `</tbody></table>`;
+  table.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Price Charts
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadPriceChart() {
+  const data = await api('/api/price?limit=2000');
+  state.priceData = data;
+
+  const dates = data.dates;
+  const close = data.close;
+
+  // Main price chart with MA + BOLL
+  const chart = echarts.init(document.getElementById('chart-price'));
+  state.charts.price = chart;
+
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['收盘价', 'MA20', 'MA60', 'BOLL上轨', 'BOLL下轨'] },
+    grid: { top: 40, bottom: 40, left: 60, right: 20 },
+    xAxis: {
+      type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 10, formatter: v => v.slice(0, 7) },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: 'value', scale: true,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 10 },
+      splitLine: { lineStyle: { color: '#21262d' } },
+    },
+    dataZoom: [
+      { type: 'inside', start: 70, end: 100 },
+      { type: 'slider', start: 70, end: 100, height: 20, bottom: 5 },
+    ],
+    series: [
+      { name: '收盘价', type: 'line', data: close, smooth: false, lineStyle: { width: 1, color: '#58a6ff' }, symbol: 'none', itemStyle: { color: '#58a6ff' } },
+      { name: 'MA20', type: 'line', data: data.ma20, smooth: true, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none' },
+      { name: 'MA60', type: 'line', data: data.ma60, smooth: true, lineStyle: { width: 1, color: '#d29922' }, symbol: 'none' },
+      { name: 'BOLL上轨', type: 'line', data: data.boll_upper, smooth: true, lineStyle: { width: 1, color: '#bc8cff', type: 'dashed' }, symbol: 'none' },
+      { name: 'BOLL下轨', type: 'line', data: data.boll_lower, smooth: true, lineStyle: { width: 1, color: '#bc8cff', type: 'dashed' }, symbol: 'none' },
+    ],
+  };
+  chart.setOption(option);
+  window.addEventListener('resize', () => chart.resize());
+
+  // MACD chart
+  const macdChart = echarts.init(document.getElementById('chart-macd'));
+  state.charts.macd = macdChart;
+  macdChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['MACD_DIF', 'MACD_DEA', 'MACD_hist'] },
+    grid: { top: 40, bottom: 30, left: 60, right: 20 },
+    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [{ type: 'inside', start: 70, end: 100 }],
+    series: [
+      { name: 'MACD_DIF', type: 'line', data: data.macd_dif, lineStyle: { width: 1, color: '#58a6ff' }, symbol: 'none' },
+      { name: 'MACD_DEA', type: 'line', data: data.macd_dea, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none' },
+      { name: 'MACD_hist', type: 'bar', data: data.macd_hist, itemStyle: { color: (p) => p.data >= 0 ? 'rgba(63,185,80,0.6)' : 'rgba(248,81,73,0.6)' } },
+    ],
+  });
+
+  // RSI / CCI chart
+  const rsiChart = echarts.init(document.getElementById('chart-rsi'));
+  state.charts.rsi = rsiChart;
+  rsiChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['RSI(14)', 'CCI(14)'] },
+    grid: { top: 40, bottom: 30, left: 60, right: 20 },
+    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [{ type: 'inside', start: 70, end: 100 }],
+    series: [
+      { name: 'RSI(14)', type: 'line', data: data.rsi_14, lineStyle: { width: 1, color: '#3fb950' }, symbol: 'none', markLine: { silent: true, symbol: 'none', data: [{ yAxis: 70, lineStyle: { color: '#f85149', type: 'dashed', width: 1 }, label: { formatter: '70', color: '#f85149', fontSize: 9 } }, { yAxis: 30, lineStyle: { color: '#3fb950', type: 'dashed', width: 1 }, label: { formatter: '30', color: '#3fb950', fontSize: 9 } }] } },
+      { name: 'CCI(14)', type: 'line', data: data.cci_14, lineStyle: { width: 1, color: '#bc8cff' }, symbol: 'none' },
+    ],
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Fundamental Charts
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadFundamentalCharts() {
+  const data = await api('/api/fundamental?limit=1500');
+  state.fundamentalData = data;
+
+  // Find key columns
+  const keys = Object.keys(data).filter(k => k !== 'dates');
+  const portPriceKey = keys.find(k => k.includes('北港价格')) || keys[0];
+  const wrKey = keys.find(k => k.includes('仓单') && !k.includes('总计')) || keys[1];
+  const wheatKey = keys.find(k => k.includes('小麦替代')) || null;
+
+  const dates = data.dates;
+
+  // Port price chart
+  const ppChart = echarts.init(document.getElementById('chart-port-price'));
+  state.charts.portPrice = ppChart;
+  ppChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 } },
+    grid: { top: 40, bottom: 40, left: 60, right: 20 },
+    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', scale: true, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [{ type: 'inside', start: 50, end: 100 }, { type: 'slider', start: 50, end: 100, height: 20, bottom: 5 }],
+    series: Object.keys(data).filter(k => k.includes('价格') || k.includes('港')).map((key, i) => ({
+      name: key, type: 'line', data: data[key], smooth: true, lineStyle: { width: 1 }, symbol: 'none',
+      itemStyle: { color: ['#58a6ff', '#f0883e', '#3fb950'][i % 3] },
+    })),
+  });
+  window.addEventListener('resize', () => ppChart.resize());
+
+  // Warehouse receipts chart
+  const wrChart = echarts.init(document.getElementById('chart-wr'));
+  state.charts.wr = wrChart;
+  wrChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: [wrKey] },
+    grid: { top: 40, bottom: 40, left: 60, right: 20 },
+    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', scale: true, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [{ type: 'inside', start: 50, end: 100 }, { type: 'slider', start: 50, end: 100, height: 20, bottom: 5 }],
+    series: [{ name: wrKey, type: 'bar', data: data[wrKey], itemStyle: { color: (p) => p.data > 0 ? 'rgba(188,140,255,0.7)' : 'rgba(248,81,73,0.7)' } }],
+  });
+
+  // Wheat substitution chart
+  if (wheatKey) {
+    const whChart = echarts.init(document.getElementById('chart-wheat'));
+    state.charts.wheat = whChart;
+    whChart.setOption({
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis' },
+      legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: [wheatKey] },
+      grid: { top: 40, bottom: 30, left: 60, right: 20 },
+      xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+      yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
+      dataZoom: [{ type: 'inside', start: 50, end: 100 }],
+      series: [{ name: wheatKey, type: 'line', data: data[wheatKey], smooth: true, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none', areaStyle: { color: 'rgba(240,136,62,0.1)' } }],
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main init
+// ─────────────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    // Wait for health
+    let health;
+    for (let i = 0; i < 30; i++) {
+      try {
+        health = await api('/api/health');
+        if (health.is_ready) break;
+      } catch (e) {}
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    if (!health?.is_ready) {
+      document.getElementById('metrics-row').innerHTML = '<div class="alert alert-warning">模型初始化中，请稍候（首次加载约需3-5分钟）...</div>';
+    }
+
+    const data = await api('/api/prediction');
+    renderDashboard(data);
+
+  } catch (err) {
+    console.error('Init error:', err);
+    document.getElementById('metrics-row').innerHTML = `<div class="alert alert-warning">加载失败: ${err.message}。请确保后端服务已启动（python app.py）。</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
