@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+results/
+data/cftc_*.csv
+*.xlsx
+*.png
+*.csv
+*.log
