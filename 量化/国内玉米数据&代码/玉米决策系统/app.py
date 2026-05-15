@@ -110,7 +110,7 @@ class PriceDataResponse(BaseModel):
 
 class FundamentalDataResponse(BaseModel):
     dates: List[str]
-    data: Dict[str, List[float]]
+    data: Dict[str, List[Optional[float]]]
 
 
 class HealthResponse(BaseModel):
@@ -239,17 +239,8 @@ async def get_price_data(
     if end_date:
         df = df[df["date"] <= pd.Timestamp(end_date)]
 
-    # Core OHLCV
-    result = {
-        "dates": [str(d.date()) for d in df["date"]],
-        "open": [float(x) for x in df["open"]],
-        "high": [float(x) for x in df["high"]],
-        "low": [float(x) for x in df["low"]],
-        "close": [float(x) for x in df["close"]],
-        "volume": [float(x) for x in df["volume"]],
-    }
-
-    # Key features for overlay
+    # Key features for overlay (must go under the "features" key)
+    features: Dict[str, List[float]] = {}
     feature_cols = [
         "ma5", "ma20", "ma60", "boll_upper", "boll_middle", "boll_lower",
         "macd_dif", "macd_dea", "macd_hist", "rsi_14", "cci_14",
@@ -257,9 +248,17 @@ async def get_price_data(
     ]
     for col in feature_cols:
         if col in df.columns:
-            result[col] = [float(x) if pd.notna(x) else None for x in df[col]]
+            features[col] = [float(x) if pd.notna(x) else None for x in df[col]]
 
-    return PriceDataResponse(**result)
+    return PriceDataResponse(
+        dates=[str(d.date()) for d in df["date"]],
+        open=[float(x) for x in df["open"]],
+        high=[float(x) for x in df["high"]],
+        low=[float(x) for x in df["low"]],
+        close=[float(x) for x in df["close"]],
+        volume=[float(x) for x in df["volume"]],
+        features=features,
+    )
 
 
 @app.get("/api/fundamental", response_model=FundamentalDataResponse)
@@ -279,15 +278,16 @@ async def get_fundamental_data(
     if end_date:
         df = df[df["date"] <= pd.Timestamp(end_date)]
 
-    # Flatten multi-index columns
-    flat_data = {"dates": [str(d.date()) for d in df["date"]]}
+    # Flatten multi-index columns into "data" nested dict
+    dates_list = [str(d.date()) for d in df["date"]]
+    data_dict: Dict[str, List[float]] = {}
     for col in df.columns:
         if col == "date":
             continue
         clean_name = col.replace("|", "_").replace(" ", "_")
-        flat_data[clean_name] = [float(x) if pd.notna(x) else None for x in df[col]]
+        data_dict[clean_name] = [float(x) if pd.notna(x) else None for x in df[col]]
 
-    return FundamentalDataResponse(**flat_data)
+    return FundamentalDataResponse(dates=dates_list, data=data_dict)
 
 
 @app.get("/api/summary")

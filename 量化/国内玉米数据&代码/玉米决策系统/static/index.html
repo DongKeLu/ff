@@ -520,15 +520,15 @@
   </div>
   <div class="chart-row">
     <div class="card" style="margin-bottom: 0;">
-      <div class="card-header">MACD</div>
+      <div class="card-header">KDJ 随机指标</div>
       <div class="card-body" style="padding: 8px;">
-        <div class="chart-container" id="chart-macd" style="height: 200px;"></div>
+        <div class="chart-container" id="chart-kdj" style="height: 200px;"></div>
       </div>
     </div>
     <div class="card" style="margin-bottom: 0;">
-      <div class="card-header">RSI / CCI</div>
+      <div class="card-header">ATR 真实波幅</div>
       <div class="card-body" style="padding: 8px;">
-        <div class="chart-container" id="chart-rsi" style="height: 200px;"></div>
+        <div class="chart-container" id="chart-atr" style="height: 200px;"></div>
       </div>
     </div>
   </div>
@@ -781,145 +781,433 @@ function renderModelDetail() {
 // Render: Price Charts
 // ─────────────────────────────────────────────────────────────────────────────
 async function loadPriceChart() {
-  const data = await api('/api/price?limit=2000');
-  state.priceData = data;
+  const resp = await api('/api/price?limit=2000');
+  state.priceData = resp;
 
-  const dates = data.dates;
-  const close = data.close;
+  const dates = resp.dates;
+  const close = resp.close;
+  const f = resp.features; // shorthand
 
-  // Main price chart with MA + BOLL
+  // ── Main price chart ──────────────────────────────────────
   const chart = echarts.init(document.getElementById('chart-price'));
   state.charts.price = chart;
 
-  const option = {
+  const pred = state.prediction;
+  const latestDate = dates[dates.length - 1];
+  const latestClose = close[close.length - 1];
+
+  // Find prediction price for horizon=1
+  let predMark = null;
+  let ciMark = null;
+  if (pred && pred.predictions && pred.predictions["1"]) {
+    const p1 = pred.predictions["1"].ensemble;
+    if (p1.pred_price) {
+      predMark = {
+        name: '预测价格',
+        coord: [latestDate, p1.pred_price],
+        value: p1.pred_price,
+        symbol: 'circle',
+        symbolSize: 8,
+        itemStyle: { color: '#f0883e', borderColor: '#fff', borderWidth: 2 },
+        label: { formatter: `预测 {c}`, color: '#f0883e', fontSize: 11, position: 'top', distance: 5 },
+      };
+      if (p1.ci_lower && p1.ci_upper) {
+        ciMark = {
+          name: '置信区间',
+          yAxis: p1.ci_lower,
+          coord: [latestDate, p1.ci_lower],
+          lineStyle: { color: '#f0883e', type: 'dashed', width: 1 },
+          label: { formatter: `{c}`, color: '#f0883e', fontSize: 9, position: 'right' },
+        };
+      }
+    }
+  }
+
+  const markLineData = [];
+  if (predMark) markLineData.push(predMark);
+  if (ciMark) markLineData.push(ciMark);
+
+  chart.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['收盘价', 'MA20', 'MA60', 'BOLL上轨', 'BOLL下轨'] },
-    grid: { top: 40, bottom: 40, left: 60, right: 20 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', label: { backgroundColor: '#21262d', borderColor: '#30363d' } },
+      formatter: function(params) {
+        let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+        params.forEach(p => {
+          if (p.value === null || p.value === undefined) return;
+          tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${typeof p.value === 'number' ? p.value.toFixed(2) : p.value}</b><br/>`;
+        });
+        return tip;
+      }
+    },
+    legend: {
+      top: 6, right: 80,
+      textStyle: { color: '#8b949e', fontSize: 10 },
+      data: ['收盘价', 'MA5', 'MA20', 'MA60', '布林上轨', '布林下轨', '预测价格'],
+    },
+    grid: { top: 38, bottom: 52, left: 58, right: 18 },
     xAxis: {
       type: 'category', data: dates,
       axisLine: { lineStyle: { color: '#30363d' } },
-      axisLabel: { color: '#8b949e', fontSize: 10, formatter: v => v.slice(0, 7) },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value', scale: true,
       axisLine: { lineStyle: { color: '#30363d' } },
-      axisLabel: { color: '#8b949e', fontSize: 10 },
+      axisLabel: { color: '#8b949e', fontSize: 10, formatter: v => v.toFixed(0) },
       splitLine: { lineStyle: { color: '#21262d' } },
     },
     dataZoom: [
-      { type: 'inside', start: 70, end: 100 },
-      { type: 'slider', start: 70, end: 100, height: 20, bottom: 5 },
+      { type: 'inside', start: 85, end: 100 },
+      { type: 'slider', start: 85, end: 100, height: 18, bottom: 6,
+        borderColor: '#30363d', backgroundColor: '#161b22',
+        dataBackground: { lineStyle: { color: '#30363d' }, areaStyle: { color: '#21262d' } },
+        selectedDataBackground: { lineStyle: { color: '#58a6ff' }, areaStyle: { color: 'rgba(88,166,255,0.15)' } },
+        fillerColor: 'rgba(88,166,255,0.1)', handleStyle: { color: '#58a6ff' },
+        textStyle: { color: '#8b949e', fontSize: 9 }
+      },
     ],
     series: [
-      { name: '收盘价', type: 'line', data: close, smooth: false, lineStyle: { width: 1, color: '#58a6ff' }, symbol: 'none', itemStyle: { color: '#58a6ff' } },
-      { name: 'MA20', type: 'line', data: data.ma20, smooth: true, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none' },
-      { name: 'MA60', type: 'line', data: data.ma60, smooth: true, lineStyle: { width: 1, color: '#d29922' }, symbol: 'none' },
-      { name: 'BOLL上轨', type: 'line', data: data.boll_upper, smooth: true, lineStyle: { width: 1, color: '#bc8cff', type: 'dashed' }, symbol: 'none' },
-      { name: 'BOLL下轨', type: 'line', data: data.boll_lower, smooth: true, lineStyle: { width: 1, color: '#bc8cff', type: 'dashed' }, symbol: 'none' },
+      {
+        name: '收盘价', type: 'line', data: close,
+        smooth: false, lineStyle: { width: 1.5, color: '#58a6ff' },
+        symbol: 'none', itemStyle: { color: '#58a6ff' },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(88,166,255,0.15)' },
+          { offset: 1, color: 'rgba(88,166,255,0)' },
+        ])},
+      },
+      { name: 'MA5', type: 'line', data: f.ma5, smooth: true, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none', z: 2 },
+      { name: 'MA20', type: 'line', data: f.ma20, smooth: true, lineStyle: { width: 1, color: '#d29922' }, symbol: 'none', z: 2 },
+      { name: 'MA60', type: 'line', data: f.ma60, smooth: true, lineStyle: { width: 1, color: '#bc8cff' }, symbol: 'none', z: 2 },
+      { name: '布林上轨', type: 'line', data: f.boll_upper, smooth: true, lineStyle: { width: 1, color: 'rgba(188,140,255,0.5)', type: 'dashed' }, symbol: 'none', z: 1 },
+      { name: '布林下轨', type: 'line', data: f.boll_lower, smooth: true, lineStyle: { width: 1, color: 'rgba(188,140,255,0.5)', type: 'dashed' }, symbol: 'none', z: 1,
+        markLine: markLineData.length > 0 ? { silent: true, symbol: 'none', data: markLineData } : undefined,
+      },
     ],
-  };
-  chart.setOption(option);
+  });
   window.addEventListener('resize', () => chart.resize());
 
-  // MACD chart
+  // ── MACD chart ───────────────────────────────────────────
   const macdChart = echarts.init(document.getElementById('chart-macd'));
   state.charts.macd = macdChart;
   macdChart.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
-    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['MACD_DIF', 'MACD_DEA', 'MACD_hist'] },
-    grid: { top: 40, bottom: 30, left: 60, right: 20 },
-    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
-    yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
-    dataZoom: [{ type: 'inside', start: 70, end: 100 }],
+    tooltip: { trigger: 'axis', formatter: function(params) {
+      let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+      params.forEach(p => {
+        if (p.value === null || p.value === undefined) return;
+        tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${p.value.toFixed(4)}</b><br/>`;
+      });
+      return tip;
+    }},
+    legend: { top: 8, right: 20, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['DIF', 'DEA', 'MACD柱'] },
+    grid: { top: 36, bottom: 36, left: 58, right: 18 },
+    xAxis: { type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.toFixed(2) },
+      splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [{ type: 'inside', start: 85, end: 100 }],
     series: [
-      { name: 'MACD_DIF', type: 'line', data: data.macd_dif, lineStyle: { width: 1, color: '#58a6ff' }, symbol: 'none' },
-      { name: 'MACD_DEA', type: 'line', data: data.macd_dea, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none' },
-      { name: 'MACD_hist', type: 'bar', data: data.macd_hist, itemStyle: { color: (p) => p.data >= 0 ? 'rgba(63,185,80,0.6)' : 'rgba(248,81,73,0.6)' } },
+      { name: 'DIF', type: 'line', data: f.macd_dif, lineStyle: { width: 1, color: '#58a6ff' }, symbol: 'none' },
+      { name: 'DEA', type: 'line', data: f.macd_dea, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none' },
+      {
+        name: 'MACD柱', type: 'bar',
+        data: f.macd_hist,
+        barWidth: '60%',
+        itemStyle: {
+          color: function(p) { return p.data >= 0 ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)'; }
+        }
+      },
     ],
   });
+  window.addEventListener('resize', () => macdChart.resize());
 
-  // RSI / CCI chart
+  // ── RSI / CCI chart ──────────────────────────────────────
   const rsiChart = echarts.init(document.getElementById('chart-rsi'));
   state.charts.rsi = rsiChart;
   rsiChart.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
-    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['RSI(14)', 'CCI(14)'] },
-    grid: { top: 40, bottom: 30, left: 60, right: 20 },
-    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
-    yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
-    dataZoom: [{ type: 'inside', start: 70, end: 100 }],
+    tooltip: { trigger: 'axis', formatter: function(params) {
+      let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+      params.forEach(p => {
+        if (p.value === null || p.value === undefined) return;
+        tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${p.value.toFixed(1)}</b><br/>`;
+      });
+      return tip;
+    }},
+    legend: { top: 8, right: 20, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['RSI(14)', 'CCI(14)'] },
+    grid: { top: 36, bottom: 36, left: 58, right: 18 },
+    xAxis: { type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value',
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.toFixed(0) },
+      splitLine: { lineStyle: { color: '#21262d' } },
+      max: 100, min: -100,
+      markLine: { silent: true, symbol: 'none', lineStyle: { type: 'dashed', width: 1 },
+        data: [
+          { yAxis: 70, lineStyle: { color: '#f85149' }, label: { formatter: '70', color: '#f85149', fontSize: 9 } },
+          { yAxis: 30, lineStyle: { color: '#3fb950' }, label: { formatter: '30', color: '#3fb950', fontSize: 9 } },
+          { yAxis: 0, lineStyle: { color: '#8b949e', type: 'dashed', opacity: 0.4 }, label: { show: false } },
+        ]
+      }
+    },
+    dataZoom: [{ type: 'inside', start: 85, end: 100 }],
     series: [
-      { name: 'RSI(14)', type: 'line', data: data.rsi_14, lineStyle: { width: 1, color: '#3fb950' }, symbol: 'none', markLine: { silent: true, symbol: 'none', data: [{ yAxis: 70, lineStyle: { color: '#f85149', type: 'dashed', width: 1 }, label: { formatter: '70', color: '#f85149', fontSize: 9 } }, { yAxis: 30, lineStyle: { color: '#3fb950', type: 'dashed', width: 1 }, label: { formatter: '30', color: '#3fb950', fontSize: 9 } }] } },
-      { name: 'CCI(14)', type: 'line', data: data.cci_14, lineStyle: { width: 1, color: '#bc8cff' }, symbol: 'none' },
+      { name: 'RSI(14)', type: 'line', data: f.rsi_14, lineStyle: { width: 1.5, color: '#3fb950' }, symbol: 'none' },
+      { name: 'CCI(14)', type: 'line', data: f.cci_14, lineStyle: { width: 1, color: '#bc8cff' }, symbol: 'none' },
     ],
   });
+  window.addEventListener('resize', () => rsiChart.resize());
+
+  // ── KDJ chart ────────────────────────────────────────────
+  const kdjChart = echarts.init(document.getElementById('chart-kdj'));
+  state.charts.kdj = kdjChart;
+  kdjChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', formatter: function(params) {
+      let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+      params.forEach(p => {
+        if (p.value === null || p.value === undefined) return;
+        tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${p.value.toFixed(1)}</b><br/>`;
+      });
+      return tip;
+    }},
+    legend: { top: 8, right: 20, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['K', 'D', 'J'] },
+    grid: { top: 36, bottom: 36, left: 58, right: 18 },
+    xAxis: { type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value',
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9 },
+      splitLine: { lineStyle: { color: '#21262d' } },
+      max: 100, min: 0,
+      markLine: { silent: true, symbol: 'none', lineStyle: { type: 'dashed', width: 1 },
+        data: [
+          { yAxis: 80, lineStyle: { color: '#f85149', opacity: 0.5 }, label: { formatter: '80', color: '#f85149', fontSize: 9 } },
+          { yAxis: 20, lineStyle: { color: '#3fb950', opacity: 0.5 }, label: { formatter: '20', color: '#3fb950', fontSize: 9 } },
+        ]
+      }
+    },
+    dataZoom: [{ type: 'inside', start: 85, end: 100 }],
+    series: [
+      { name: 'K', type: 'line', data: f.kdj_k, lineStyle: { width: 1, color: '#58a6ff' }, symbol: 'none' },
+      { name: 'D', type: 'line', data: f.kdj_d, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none' },
+      { name: 'J', type: 'line', data: f.kdj_d.map((v, i) => f.kdj_k[i] !== null && v !== null ? 3 * f.kdj_k[i] - 2 * v : null),
+        lineStyle: { width: 1, color: '#f85149', type: 'dashed' }, symbol: 'none' },
+    ],
+  });
+  window.addEventListener('resize', () => kdjChart.resize());
+
+  // ── ATR chart ────────────────────────────────────────────
+  const atrChart = echarts.init(document.getElementById('chart-atr'));
+  state.charts.atr = atrChart;
+  atrChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', formatter: function(params) {
+      let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+      params.forEach(p => {
+        if (p.value === null || p.value === undefined) return;
+        tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${p.value.toFixed(2)}</b><br/>`;
+      });
+      return tip;
+    }},
+    legend: { top: 8, right: 20, textStyle: { color: '#8b949e', fontSize: 10 }, data: ['ATR(14)'] },
+    grid: { top: 36, bottom: 36, left: 58, right: 18 },
+    xAxis: { type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', scale: true,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.toFixed(1) },
+      splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [{ type: 'inside', start: 85, end: 100 }],
+    series: [{
+      name: 'ATR(14)', type: 'line', data: f.atr_14,
+      lineStyle: { width: 1.5, color: '#bc8cff' }, symbol: 'none',
+      areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        { offset: 0, color: 'rgba(188,140,255,0.2)' },
+        { offset: 1, color: 'rgba(188,140,255,0)' },
+      ])},
+    }],
+  });
+  window.addEventListener('resize', () => atrChart.resize());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Render: Fundamental Charts
 // ─────────────────────────────────────────────────────────────────────────────
 async function loadFundamentalCharts() {
-  const data = await api('/api/fundamental?limit=1500');
-  state.fundamentalData = data;
+  const resp = await api('/api/fundamental?limit=1500');
+  state.fundamentalData = resp;
 
-  // Find key columns
-  const keys = Object.keys(data).filter(k => k !== 'dates');
-  const portPriceKey = keys.find(k => k.includes('北港价格')) || keys[0];
-  const wrKey = keys.find(k => k.includes('仓单') && !k.includes('总计')) || keys[1];
-  const wheatKey = keys.find(k => k.includes('小麦替代')) || null;
+  const data = resp.data;
+  const dates = resp.dates;
 
-  const dates = data.dates;
+  // Helper: filter valid dates (skip if all null for that date)
+  function makeSeries(key, type, extraOpts) {
+    const vals = data[key] || [];
+    return Object.assign({
+      name: key,
+      type: type || 'line',
+      data: vals,
+      smooth: true,
+      lineStyle: { width: 1.5 },
+      symbol: 'none',
+    }, extraOpts || {});
+  }
 
-  // Port price chart
+  const PALETTE = ['#58a6ff', '#f0883e', '#3fb950', '#bc8cff', '#d29922', '#f85149'];
+  let colorIdx = 0;
+  const nextColor = () => PALETTE[colorIdx++ % PALETTE.length];
+
+  // ── Port price chart ─────────────────────────────────────
   const ppChart = echarts.init(document.getElementById('chart-port-price'));
   state.charts.portPrice = ppChart;
+
+  const priceKeys = Object.keys(data).filter(k => k.includes('价格'));
+  const portSeries = priceKeys.slice(0, 6).map((k, i) =>
+    makeSeries(k, 'line', { lineStyle: { width: 1.5, color: nextColor() } })
+  );
+
   ppChart.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
-    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 } },
-    grid: { top: 40, bottom: 40, left: 60, right: 20 },
-    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
-    yAxis: { type: 'value', scale: true, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
-    dataZoom: [{ type: 'inside', start: 50, end: 100 }, { type: 'slider', start: 50, end: 100, height: 20, bottom: 5 }],
-    series: Object.keys(data).filter(k => k.includes('价格') || k.includes('港')).map((key, i) => ({
-      name: key, type: 'line', data: data[key], smooth: true, lineStyle: { width: 1 }, symbol: 'none',
-      itemStyle: { color: ['#58a6ff', '#f0883e', '#3fb950'][i % 3] },
-    })),
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+        params.forEach(p => {
+          if (p.value === null || p.value === undefined) return;
+          tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${p.value.toFixed(0)}</b><br/>`;
+        });
+        return tip;
+      }
+    },
+    legend: { top: 6, right: 10, textStyle: { color: '#8b949e', fontSize: 9 }, type: 'scroll' },
+    grid: { top: 38, bottom: 48, left: 60, right: 18 },
+    xAxis: { type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', scale: true,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 10, formatter: v => v.toFixed(0) },
+      splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [
+      { type: 'inside', start: 60, end: 100 },
+      { type: 'slider', start: 60, end: 100, height: 18, bottom: 6,
+        borderColor: '#30363d', backgroundColor: '#161b22',
+        dataBackground: { lineStyle: { color: '#30363d' }, areaStyle: { color: '#21262d' } },
+        selectedDataBackground: { lineStyle: { color: '#58a6ff' }, areaStyle: { color: 'rgba(88,166,255,0.15)' } },
+        fillerColor: 'rgba(88,166,255,0.1)', handleStyle: { color: '#58a6ff' },
+        textStyle: { color: '#8b949e', fontSize: 9 }
+      },
+    ],
+    series: portSeries,
   });
   window.addEventListener('resize', () => ppChart.resize());
 
-  // Warehouse receipts chart
+  // ── Warehouse receipts chart ──────────────────────────────
   const wrChart = echarts.init(document.getElementById('chart-wr'));
   state.charts.wr = wrChart;
+
+  const wrKey = Object.keys(data).find(k => k.includes('仓单') && !k.includes('总计')) || Object.keys(data)[0];
+
   wrChart.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
-    legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: [wrKey] },
-    grid: { top: 40, bottom: 40, left: 60, right: 20 },
-    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
-    yAxis: { type: 'value', scale: true, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
-    dataZoom: [{ type: 'inside', start: 50, end: 100 }, { type: 'slider', start: 50, end: 100, height: 20, bottom: 5 }],
-    series: [{ name: wrKey, type: 'bar', data: data[wrKey], itemStyle: { color: (p) => p.data > 0 ? 'rgba(188,140,255,0.7)' : 'rgba(248,81,73,0.7)' } }],
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+        params.forEach(p => {
+          if (p.value === null || p.value === undefined) return;
+          tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${p.value.toFixed(0)}</b><br/>`;
+        });
+        return tip;
+      }
+    },
+    legend: { top: 8, right: 20, textStyle: { color: '#8b949e', fontSize: 10 }, data: [wrKey] },
+    grid: { top: 38, bottom: 48, left: 60, right: 18 },
+    xAxis: { type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+    yAxis: { type: 'value', scale: true,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: { color: '#8b949e', fontSize: 10, formatter: v => (v / 10000).toFixed(0) + '万' },
+      splitLine: { lineStyle: { color: '#21262d' } } },
+    dataZoom: [
+      { type: 'inside', start: 60, end: 100 },
+      { type: 'slider', start: 60, end: 100, height: 18, bottom: 6,
+        borderColor: '#30363d', backgroundColor: '#161b22',
+        dataBackground: { lineStyle: { color: '#30363d' }, areaStyle: { color: '#21262d' } },
+        selectedDataBackground: { lineStyle: { color: '#bc8cff' }, areaStyle: { color: 'rgba(188,140,255,0.15)' } },
+        fillerColor: 'rgba(188,140,255,0.1)', handleStyle: { color: '#bc8cff' },
+        textStyle: { color: '#8b949e', fontSize: 9 }
+      },
+    ],
+    series: [{
+      name: wrKey, type: 'bar',
+      data: data[wrKey],
+      barWidth: '60%',
+      itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        { offset: 0, color: 'rgba(188,140,255,0.8)' },
+        { offset: 1, color: 'rgba(188,140,255,0.3)' },
+      ])},
+    }],
   });
+  window.addEventListener('resize', () => wrChart.resize());
 
-  // Wheat substitution chart
+  // ── Wheat substitution chart ──────────────────────────────
+  const wheatKey = Object.keys(data).find(k => k.includes('小麦替代'));
   if (wheatKey) {
     const whChart = echarts.init(document.getElementById('chart-wheat'));
     state.charts.wheat = whChart;
+    const vals = data[wheatKey];
     whChart.setOption({
       backgroundColor: 'transparent',
-      tooltip: { trigger: 'axis' },
-      legend: { top: 8, textStyle: { color: '#8b949e', fontSize: 10 }, data: [wheatKey] },
-      grid: { top: 40, bottom: 30, left: 60, right: 20 },
-      xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
-      yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 }, splitLine: { lineStyle: { color: '#21262d' } } },
-      dataZoom: [{ type: 'inside', start: 50, end: 100 }],
-      series: [{ name: wheatKey, type: 'line', data: data[wheatKey], smooth: true, lineStyle: { width: 1, color: '#f0883e' }, symbol: 'none', areaStyle: { color: 'rgba(240,136,62,0.1)' } }],
+      tooltip: {
+        trigger: 'axis',
+        formatter: function(params) {
+          let tip = params[0].axisValue.slice(0, 10) + '<br/>';
+          params.forEach(p => {
+            if (p.value === null || p.value === undefined) return;
+            tip += `<span style="color:${p.color};">\u25CF</span> ${p.seriesName}: <b>${p.value.toFixed(2)}</b><br/>`;
+          });
+          return tip;
+        }
+      },
+      legend: { top: 8, right: 20, textStyle: { color: '#8b949e', fontSize: 10 }, data: [wheatKey] },
+      grid: { top: 38, bottom: 36, left: 60, right: 18 },
+      xAxis: { type: 'category', data: dates,
+        axisLine: { lineStyle: { color: '#30363d' } },
+        axisLabel: { color: '#8b949e', fontSize: 9, formatter: v => v.slice(0, 7) }, splitLine: { show: false } },
+      yAxis: { type: 'value', scale: true,
+        axisLine: { lineStyle: { color: '#30363d' } },
+        axisLabel: { color: '#8b949e', fontSize: 10, formatter: v => v.toFixed(0) },
+        splitLine: { lineStyle: { color: '#21262d' } },
+        markLine: { silent: true, symbol: 'none', lineStyle: { type: 'dashed', width: 1, color: '#8b949e' },
+          data: [{ yAxis: 0, label: { formatter: '0', color: '#8b949e', fontSize: 9 } }]
+        }
+      },
+      dataZoom: [{ type: 'inside', start: 60, end: 100 }],
+      series: [{
+        name: wheatKey, type: 'line', data: vals, smooth: true,
+        lineStyle: { width: 1.5, color: '#f0883e' }, symbol: 'none',
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(240,136,62,0.15)' },
+          { offset: 1, color: 'rgba(240,136,62,0)' },
+        ])},
+      }],
     });
+    window.addEventListener('resize', () => whChart.resize());
+  } else {
+    document.getElementById('chart-wheat').closest('.card').style.display = 'none';
   }
 }
 

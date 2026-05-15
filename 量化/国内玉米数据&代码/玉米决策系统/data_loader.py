@@ -75,6 +75,10 @@ def load_fundamental_data(
         base = Path(__file__).parent.parent
         fundamental_path = base / "2-基本面" / "国内玉米基本面日度数据.xlsx"
 
+    if not Path(fundamental_path).exists():
+        print(f"[警告] 基本面数据文件不存在: {fundamental_path}，系统将以仅量价模式运行")
+        return pd.DataFrame(columns=["date"])
+
     # Read with header on row 1 (0-indexed)
     df = pd.read_excel(fundamental_path, sheet_name=0, header=[0, 1])
     df.columns = [f"{a}|{b}" if pd.notna(b) else a for a, b in df.columns]
